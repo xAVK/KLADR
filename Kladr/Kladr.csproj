@@ -80,6 +80,10 @@
     <Compile Include="Migrations\201701300845449_init.Designer.cs">
       <DependentUpon>201701300845449_init.cs</DependentUpon>
     </Compile>
+    <Compile Include="Migrations\201702010351395_add_region and city.cs" />
+    <Compile Include="Migrations\201702010351395_add_region and city.Designer.cs">
+      <DependentUpon>201702010351395_add_region and city.cs</DependentUpon>
+    </Compile>
     <Compile Include="Migrations\Configuration.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -91,6 +95,9 @@
   <ItemGroup>
     <EmbeddedResource Include="Migrations\201701300845449_init.resx">
       <DependentUpon>201701300845449_init.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Migrations\201702010351395_add_region and city.resx">
+      <DependentUpon>201702010351395_add_region and city.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

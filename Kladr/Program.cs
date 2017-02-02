@@ -23,7 +23,7 @@ namespace Kladr
         {
             //using (DbElementContext db = new DbElementContext())
             //{
-            //    Regex rg = new Regex("Белинского");
+            //    Regex rg = new Regex("Курская");
             //    List<DbElement> list = new List<DbElement>();
             //    foreach (var item in db.Buldings)
             //    {
@@ -34,43 +34,222 @@ namespace Kladr
             //    }
             //}
             WebClient client = new WebClient();
+            client.Encoding = Encoding.ASCII;
             BackgroundJobClient bj;
             GlobalConfiguration.Configuration.UseSqlServerStorage("Data Source=.\\SQLEXPRESS;Initial Catalog=HangFireTest;Integrated Security=True;MultipleActiveResultSets=True");
             bj = new BackgroundJobClient();
-            client.Encoding = Encoding.ASCII;
             string Begin = "";
             #region
-            string[] alphabet = { "А", "а", "Б", "б", "В", "в", "Г", "г", "Д", "д", "Е", "е", "Ё", "ё", "Ж", "ж", "З", "з", "И", "и", "Й", "й", "К", "к", "Л", "л", "М", "м", "Н", "н", "О", "о", "П", "п", "Р", "р", "С", "с", "Т", "т", "У", "у", "Ф", "ф", "Х", "х", "Ц", "ц", "Ч", "ч", "Ш", "ш", "Щ", "щ", "Ъ", "ъ", "Ы", "ы", "Ь", "ь", "Э", "э", "Ю", "ю", "Я", "я","1","2","3","4","5","6","7","8","9","0" };
+            //string[] alphabet = { "А", "а", "Б", "б", "В", "в", "Г", "г", "Д", "д", "Е", "е", "Ё", "ё", "Ж", "ж", "З", "з", "И", "и", "Й", "й", "К", "к", "Л", "л", "М", "м", "Н", "н", "О", "о", "П", "п", "Р", "р", "С", "с", "Т", "т", "У", "у", "Ф", "ф", "Х", "х", "Ц", "ц", "Ч", "ч", "Ш", "ш", "Щ", "щ", "Ъ", "ъ", "Ы", "ы", "Ь", "ь", "Э", "э", "Ю", "ю", "Я", "я","1","2","3","4","5","6","7","8","9","0" };
+            string[] alphabet = { "А", "Б", "В", "Г", "Д", "Е", "Ё", "Ж", "З", "И", "Й", "К", "Л", "М", "Н", "О", "П", "Р", "С", "Т", "У", "Ф", "Х", "Ц", "Ч", "Ш", "Щ", "Ъ", "Ы", "Ь", "Э", "Ю", "Я", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", " ", "." };
             #endregion
-            foreach (var beg in alphabet)
+            string RegionQuery = String.Format(CultureInfo.CurrentCulture, $"http://kladr-api.ru/api.php?query=Московская&contentType=region");
+            string RegionResponse = "";
+            try
             {
-                Begin = beg;
-                //string street = String.Format(CultureInfo.CurrentCulture, $"http://kladr-api.ru/api.php?query={Begin}&contentType=street&cityId=7400000900000");
-                //string street = String.Format(CultureInfo.CurrentCulture, $"http://kladr-api.ru/api.php?query={Begin}&contentType=street&cityId=7400000100000");
-                string street = String.Format(CultureInfo.CurrentCulture, $"http://kladr-api.ru/api.php?query={Begin}&contentType=street&cityId=7400000100000");
+                RegionResponse = client.DownloadStringTaskAsync(new Uri(RegionQuery)).Result;
+            }
+            catch (Exception)
+            {
                 Thread.Sleep(10000);
-                var res = client.DownloadString(new Uri(street));
-                Regex reg = new Regex("[u]{1}[0-9]{4}|[u]{1}([0-9]{3}){1}[a-z]{1}");
-                MatchCollection matches = reg.Matches(res);
-                for (int i = 0; i < matches.Count; i++)
+                RegionResponse = client.DownloadStringTaskAsync(new Uri(RegionQuery)).Result;
+            }
+            List<Element> regions = new List<Element>();
+            Get getElement = new Get();
+            regions = getElement.GetListElement(RegionResponse);
+            List<Thread> threads = new List<Thread>();
+            foreach (var region in regions)
+            {
+                List<Element> citys = new List<Element>();
+                Get getCity = new Get();
+                citys = getCity.GetAllCity(0, region.ID);
+                foreach (var city in citys)
                 {
-                    string str = matches[i].Value;
-                    string ch = Normalize(str);
-                    res = res.Replace("\\" + str, ch);
+                    Console.WriteLine($"{city.TypeShort}. {city.Name} start");
+                    threads.Add(new Thread(() =>
+                    {
+                        Thread.CurrentThread.Name = $"{city.TypeShort}. {city.Name}";
+                        foreach (var beg in alphabet)
+                        {
+                            Begin = beg;
+                            int offset = 0;
+                            List<Element> streets = new List<Element>();
+                            Get getStreet = new Get();
+                            streets = getStreet.GetAllStreets(Begin, offset, city.ID);
+                            foreach (var item in streets)
+                            {
+                                _task tsk = new _task();
+                                try
+                                {
+                                    bj.Enqueue(() => tsk.GO(item, city, region));
+                                }
+                                catch (Exception)
+                                {
+                                    Thread.Sleep(10000);
+                                    bj.Enqueue(() => tsk.GO(item, city, region));
+                                }
+                            }
+                        }
+                    }));
+                    foreach (var thread in threads)
+                    {
+                        if (thread.ThreadState == ThreadState.Unstarted)
+                        {
+                            thread.Start();
+                        }
+                    }
+                    if (threads.Count() > 20)
+                    {
+                        while (!threads.Any((t) => t.ThreadState == ThreadState.Running))
+                        {
+
+                        }
+                        List<Thread> tmp = new List<Thread>();
+                        foreach (var thread in threads)
+                        {
+                            if (thread.ThreadState == ThreadState.Running)
+                            {
+                                tmp.Add(thread);
+                            }
+                            else
+                            {
+                                Console.WriteLine($"{thread.Name} Done");
+                                thread.Abort();
+                                thread.Join(1000);
+                            }
+                        }
+                        threads.Clear();
+                        foreach (var item in tmp)
+                        {
+                            threads.Add(item);
+                        }
+                    }
                 }
-                List<Element> streets = new List<Element>();
-                string[] separator = { "result\":" };
-                string result = res.Split(separator, StringSplitOptions.RemoveEmptyEntries)[1];
-                result = result.Remove(result.Length - 1);
-                streets = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Element>>(result);
-                foreach (var item in streets)
-                {
-                    _task tsk = new _task();
-                    bj.Enqueue(() => tsk.GO(item));
-                }
-            }                        
+            }
         }
-        static string Normalize(string input)
+        static string[] GetBegin()
+        {
+            List<string> result = new List<string>();
+            string[] alphabet = { "А", "Б", "В", "Г", "Д", "Е", "Ё", "Ж", "З", "И", "Й", "К", "Л", "М", "Н", "О", "П", "Р", "С", "Т", "У", "Ф", "Х", "Ц", "Ч", "Ш", "Щ", "Ъ", "Ы", "Ь", "Э", "Ю", "Я", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", " ", "." };
+
+            foreach (var item in alphabet)
+            {
+                result.Add(item);
+                foreach (var str in alphabet)
+                {
+                    if (str != item)
+                    {
+                        result.Add(item + str);
+                    }
+                    if (str != ".")
+                    {
+                        foreach (var ch in alphabet)
+                        {
+                            result.Add(item + str + ch);
+                        }
+                    }
+                    else
+                    {
+                        result.Add(item + str + " ");
+                    }
+                }
+            }
+
+            return result.ToArray();
+        }
+
+    }
+    public class Get
+    {
+        public List<Element> GetListElement(string input)
+        {
+            Regex reg = new Regex("[u]{1}[0-9]{4}|[u]{1}([0-9]{3}){1}[a-z]{1}");
+            MatchCollection matches;
+            matches = reg.Matches(input);
+            for (int i = 0; i < matches.Count; i++)
+            {
+                string str = matches[i].Value;
+                string ch = Normalize(str);
+                input = input.Replace("\\" + str, ch);
+            }
+            string[] separator = { "result\":" };
+            string result = input.Split(separator, StringSplitOptions.RemoveEmptyEntries)[1];
+            result = result.Remove(result.Length - 1);
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<List<Element>>(result);
+        }
+        public List<Element> GetAllStreets(string Begin, int offset, string cityID)
+        {
+            string street = String.Format(CultureInfo.CurrentCulture, $"http://kladr-api.ru/api.php?query={Begin}&contentType=street&cityId={cityID}&limit=100&offset={offset.ToString()}");
+            string res = "";
+            WebClient clientStreet = new WebClient();
+            clientStreet.Encoding = Encoding.ASCII;
+            try
+            {
+                while (clientStreet.IsBusy)
+                {
+
+                }
+                res = clientStreet.DownloadStringTaskAsync(new Uri(street)).Result;
+            }
+            catch (Exception)
+            {
+                Thread.Sleep(10000);
+                while (clientStreet.IsBusy)
+                {
+
+                }
+                res = clientStreet.DownloadStringTaskAsync(new Uri(street)).Result;
+            }
+            List<Element> streets = new List<Element>();
+            streets = GetListElement(res);
+            if (streets != null && streets.Count() > 0)
+            {
+                offset += 100;
+                var list = GetAllStreets(Begin, offset, cityID);
+                foreach (var item in list)
+                {
+                    streets.Add(item);
+                }
+            }
+            return streets;
+        }
+        public List<Element> GetAllCity(int offset, string regionID)
+        {
+            WebClient clientCity = new WebClient();
+            clientCity.Encoding = Encoding.ASCII;
+            string CityQuery = String.Format(CultureInfo.CurrentCulture, $"http://kladr-api.ru/api.php?query=&contentType=city&regionId={regionID}&limit=100&offset={offset.ToString()}");
+            string Response = "";
+            try
+            {
+                while (clientCity.IsBusy)
+                {
+
+                }
+                Response = clientCity.DownloadStringTaskAsync(new Uri(CityQuery)).Result;
+            }
+            catch (Exception)
+            {
+                Thread.Sleep(10000);
+                while (clientCity.IsBusy)
+                {
+
+                }
+                Response = clientCity.DownloadStringTaskAsync(new Uri(CityQuery)).Result;
+            }
+            List<Element> citys = new List<Element>();
+            citys = GetListElement(Response);
+            if (citys != null && citys.Count() > 0)
+            {
+                offset += 100;
+                var list = GetAllCity(offset, regionID);
+                foreach (var item in list)
+                {
+                    citys.Add(item);
+                }
+            }
+            return citys;
+        }
+        public string Normalize(string input)
         {
 
             switch (input)

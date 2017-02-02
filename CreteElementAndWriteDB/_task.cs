@@ -16,18 +16,35 @@ using Hangfire;
 namespace CreteElementAndWriteDB
 {
     public class _task
-    {        
+    {
         public _task()
         {
-            
+
         }
         [Queue("default")]
-        public void GO(Element item)
+        public void GO(Element Street, Element City, Element Region)
         {
             List<DbElement> dbElement = new List<DbElement>();
             WebClient wc = new WebClient();
-            string building = String.Format(CultureInfo.CurrentCulture, $"http://kladr-api.ru/api.php?query=&contentType=building&cityId=7400000900000&streetId={item.ID}");
-            var response = wc.DownloadString(new Uri(building));
+            string building = String.Format(CultureInfo.CurrentCulture, $"http://kladr-api.ru/api.php?query=&contentType=building&cityId={City.ID}&streetId={Street.ID}");
+            string response = "";
+            try
+            {
+                while (wc.IsBusy)
+                {
+
+                }
+                response = wc.DownloadString(new Uri(building));
+            }
+            catch (Exception)
+            {
+                Thread.Sleep(10000);
+                while (wc.IsBusy)
+                {
+
+                }
+                response = wc.DownloadString(new Uri(building));
+            }
             Regex reg = new Regex("[u]{1}[0-9]{4}|[u]{1}([0-9]{3}){1}[a-z]{1}");
             MatchCollection matches = reg.Matches(response);
             if (matches != null && matches.Count > 0)
@@ -72,7 +89,7 @@ namespace CreteElementAndWriteDB
             foreach (var num in build)
             {
                 Guid id = Guid.NewGuid();
-                dbElement.Add(new DbElement { ID = id.ToString(), Street = item.Name, NumberBuild = num.Name });
+                dbElement.Add(new DbElement { ID = id.ToString(), Street = $"{Street.TypeShort}. {Street.Name}", NumberBuild = num.Name, City = $"{City.TypeShort}. {City.Name}", Region = $"{Region.Name} {Region.Type}" });
             }
             foreach (var element in dbElement)
             {
@@ -82,11 +99,10 @@ namespace CreteElementAndWriteDB
                     {
                         db.Buldings.Add(element);
                         db.SaveChanges();
-                        Console.WriteLine($"{element.Street} {element.NumberBuild} write");
+                        Console.WriteLine($"{City.Name} {Street.TypeShort}.{Street.Name} Done");
                     }
                 }
             }
-            Console.WriteLine("Done");
         }
         static string Normalize(string input)
         {
